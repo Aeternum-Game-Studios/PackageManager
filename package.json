@@ -1,0 +1,15 @@
+{
+  "name": "com.aeternum.packages",
+  "version": "1.0.0",
+  "displayName": "AGS Packages",
+  "description": "Installs, updates and uninstalls private packages as local tarballs (file: dependencies), so a project opens and compiles without GitHub credentials. Reads the package catalog with the GitHub credential Git already has on the machine.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Aeternum Game Studios",
+    "url": "https://github.com/Aeternum-Game-Studios"
+  },
+  "license": "MIT",
+  "documentationUrl": "https://github.com/Aeternum-Game-Studios/PackageManager#readme",
+  "changelogUrl": "https://github.com/Aeternum-Game-Studios/PackageManager/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Aeternum-Game-Studios/PackageManager/blob/main/LICENSE.md"
+}
