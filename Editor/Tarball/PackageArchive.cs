@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 
 namespace Aeternum.Packages
 {
@@ -73,6 +74,40 @@ namespace Aeternum.Packages
                 throw new AgsPackagesException(
                     $"{source}: package.json says version \"{version}\", but the tag is for {expectedVersion}. " +
                     "The package's version and its tag have to match.");
+        }
+
+        /// <summary>The file Unity adds to a package tarball when it signs it: the only one a published tarball may add.</summary>
+        public const string SignatureFile = ".attestation.p7m";
+
+        /// <summary>
+        /// Checks that a tarball published with a release holds exactly the tagged package folder: the same paths with
+        /// the same bytes, apart from Unity's signature (<see cref="SignatureFile"/>). Anything else means it isn't the
+        /// tag's package, so it isn't installed.
+        /// </summary>
+        public static void CheckSameFiles(IReadOnlyDictionary<string, byte[]> published, IReadOnlyDictionary<string, byte[]> tagged,
+            string publishedSource, string taggedSource)
+        {
+            var differences = new List<string>();
+            foreach (var file in tagged)
+            {
+                if (!published.TryGetValue(file.Key, out var bytes))
+                    differences.Add($"{file.Key} is missing");
+                else if (!bytes.SequenceEqual(file.Value))
+                    differences.Add($"{file.Key} is different");
+            }
+            foreach (var path in published.Keys)
+            {
+                if (path != SignatureFile && !tagged.ContainsKey(path))
+                    differences.Add($"{path} is not in the tag");
+            }
+            if (differences.Count == 0)
+                return;
+
+            var shown = string.Join("; ", differences.Take(10));
+            throw new AgsPackagesException(
+                $"{publishedSource} doesn't hold the files of {taggedSource}: {shown}" +
+                (differences.Count > 10 ? $" (and {differences.Count - 10} more)." : ".") +
+                " Pack it from a checkout of the tag with the repository's line endings.");
         }
 
         static string NormalizeFolder(string folder)

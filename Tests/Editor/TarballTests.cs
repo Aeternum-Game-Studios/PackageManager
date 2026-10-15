@@ -50,6 +50,40 @@ namespace Aeternum.Packages.Tests
         }
 
         [Test]
+        public void ReadGivesBackWhatWriteWrote()
+        {
+            var files = SampleFiles();
+            var tarball = Path.Combine(directory, "p.tgz");
+
+            TarGz.Write(tarball, files);
+            var read = TarGz.Read(tarball);
+
+            CollectionAssert.AreEquivalent(files.Keys, read.Keys);
+            foreach (var file in files)
+                CollectionAssert.AreEqual(file.Value, read[file.Key], file.Key);
+        }
+
+        [Test]
+        public void APublishedTarballMayAddOnlyTheSignature()
+        {
+            var tagged = SampleFiles();
+            var signed = new Dictionary<string, byte[]>(tagged) { [PackageArchive.SignatureFile] = new byte[] { 1, 2, 3 } };
+
+            Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(signed, tagged, "published", "tag"));
+            Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(tagged, tagged, "published", "tag"));
+
+            var changed = new Dictionary<string, byte[]>(signed) { ["Editor/Tool.cs"] = Encoding.UTF8.GetBytes("class Tool {}\n") };
+            Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(changed, tagged, "published", "tag"));
+
+            var missing = new Dictionary<string, byte[]>(signed);
+            missing.Remove("Editor/Empty.txt");
+            Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(missing, tagged, "published", "tag"));
+
+            var extra = new Dictionary<string, byte[]>(signed) { ["Editor/Extra.cs"] = new byte[0] };
+            Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(extra, tagged, "published", "tag"));
+        }
+
+        [Test]
         public void ReadsThePackageFolderOutOfAGitHubZipball()
         {
             var zip = Path.Combine(directory, "source.zip");

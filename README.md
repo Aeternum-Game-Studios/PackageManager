@@ -17,7 +17,8 @@ credentials: its private packages are plain `.tgz` files next to `Assets/`, refe
    Packages reads the catalog and each package's tags. A package's versions are its tags named
    `<tagPrefix><version>`, such as `tools-v1.2.0`.
 3. Installing a version downloads the source archive of the tagged commit from the GitHub API,
-   takes the package's folder and writes it as `UPM/<name>-<version>.tgz`. The manifest then
+   takes the package's folder and writes it as `UPM/<name>-<version>.tgz` (or installs the release's
+   own tarball, if it has one: see [Signed tarballs](#signed-tarballs)). The manifest then
    depends on `file:../UPM/<name>-<version>.tgz` (through the Package Manager, which resolves it),
    and the previous tarball is deleted. If the Package Manager fails, the manifest is left as it
    was and the new tarball is deleted.
@@ -27,6 +28,33 @@ credentials: its private packages are plain `.tgz` files next to `Assets/`, refe
 The tarball holds exactly the files of the package folder at that commit, byte for byte, and is
 reproducible: the same files always give the same `.tgz`, whoever generates it, so reinstalling a
 version changes nothing in version control.
+
+## Signed tarballs
+
+Unity 6.3 and later warn that a tarball "has been installed without a signature". A signed tarball
+can only come out of Unity, with an account of the organization that signs it, so AGS Packages
+doesn't sign: it installs a tarball that was signed once, when the version was released.
+
+1. Check out the tag with the repository's line endings (Git's `core.autocrlf` would change the
+   files, and the check below would refuse them):
+
+   ```
+   git -c core.autocrlf=false clone --depth 1 --branch v1.2.0 https://github.com/owner/tools-repository.git C:\tmp\tools-1.2.0
+   ```
+
+2. Sign its package folder with Unity (or with the Export button of the Package Manager window):
+
+   ```
+   Unity.exe -batchmode -username <email> -password <password> -upmPack C:\tmp\tools-1.2.0\unity\com.example.tools C:\tmp\signed\com.example.tools-1.2.0.tgz -cloudOrganization <organization id>
+   ```
+
+3. Attach the `.tgz` to the GitHub release of the tag, named exactly `<name>-<version>.tgz`.
+
+When the release of the version's tag has that asset, installing the version downloads it and
+installs it as it is, after checking that it holds exactly the tagged package folder: the same
+paths with the same bytes, plus only Unity's signature (`.attestation.p7m`). Anything else and the
+install fails. A version without the asset is built from the tag as before. Reinstalling a version
+whose release gained a signed tarball replaces the unsigned one.
 
 Every manifest dependency on a `.tgz` in `UPM/` is treated as managed by AGS Packages.
 

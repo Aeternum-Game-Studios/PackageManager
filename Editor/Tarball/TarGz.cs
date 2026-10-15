@@ -29,6 +29,120 @@ namespace Aeternum.Packages
             }
         }
 
+        /// <summary>
+        /// Reads the files of a package tarball, keyed by their path inside the package: the top-level folder every
+        /// package tarball puts its files under (package/) is dropped. Reads what npm, Unity's packer and
+        /// <see cref="Write"/> produce: ustar names with a prefix, pax "path" records and GNU long names. A file at the
+        /// top level, outside that folder, is kept by its name (where a signature may sit).
+        /// </summary>
+        public static Dictionary<string, byte[]> Read(string path)
+        {
+            var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+            using (var fileStream = File.OpenRead(path))
+            using (var gzip = new GZipStream(fileStream, CompressionMode.Decompress))
+            {
+                var header = new byte[BlockSize];
+                string longName = null;
+                while (ReadFully(gzip, header, path))
+                {
+                    if (header.All(b => b == 0))
+                        break;
+
+                    var size = ParseOctal(header, 124, 12, path);
+                    var type = (char)header[156];
+                    var data = new byte[size];
+                    ReadFully(gzip, data, path);
+                    var padding = (int)((BlockSize - size % BlockSize) % BlockSize);
+                    if (padding > 0)
+                        ReadFully(gzip, new byte[padding], path);
+
+                    switch (type)
+                    {
+                        case 'x':
+                            longName = PaxPath(data) ?? longName;
+                            continue;
+                        case 'L':
+                            longName = Encoding.UTF8.GetString(data).TrimEnd('\0');
+                            continue;
+                        case '0':
+                        case '\0':
+                            break;
+                        default:
+                            // Directories, links, global pax headers: not files of the package.
+                            longName = null;
+                            continue;
+                    }
+
+                    var name = longName ?? HeaderName(header);
+                    longName = null;
+                    var slash = name.IndexOf('/');
+                    var inner = slash < 0 ? name : name.Substring(slash + 1);
+                    if (inner.Length == 0 || Array.IndexOf(inner.Split('/'), "..") >= 0)
+                        throw new AgsPackagesException($"{path} has an invalid path: {name}");
+                    files[inner] = data;
+                }
+            }
+            return files;
+        }
+
+        static bool ReadFully(Stream stream, byte[] buffer, string path)
+        {
+            var read = 0;
+            while (read < buffer.Length)
+            {
+                var count = stream.Read(buffer, read, buffer.Length - read);
+                if (count == 0)
+                {
+                    if (read == 0)
+                        return false;
+                    throw new AgsPackagesException($"{path} is truncated.");
+                }
+                read += count;
+            }
+            return true;
+        }
+
+        static string HeaderName(byte[] header)
+        {
+            var name = ReadText(header, 0, 100);
+            var prefix = ReadText(header, 345, 155);
+            return prefix.Length > 0 ? prefix + "/" + name : name;
+        }
+
+        static string ReadText(byte[] header, int offset, int length) =>
+            Encoding.UTF8.GetString(header, offset, length).Split('\0')[0];
+
+        static long ParseOctal(byte[] header, int offset, int length, string path)
+        {
+            var text = ReadText(header, offset, length).Trim(' ', '\0');
+            try
+            {
+                return text.Length == 0 ? 0 : Convert.ToInt64(text, 8);
+            }
+            catch (FormatException)
+            {
+                throw new AgsPackagesException($"{path} has an entry with an invalid size.");
+            }
+        }
+
+        static string PaxPath(byte[] data)
+        {
+            // Records are "<length> <key>=<value>\n", one after the other; <length> counts the record's bytes,
+            // itself and the newline included.
+            for (var position = 0; position < data.Length;)
+            {
+                var space = Array.IndexOf(data, (byte)' ', position);
+                if (space < 0 || !int.TryParse(Encoding.ASCII.GetString(data, position, space - position), out var length) ||
+                    length <= space - position + 1 || position + length > data.Length)
+                    break;
+                var record = Encoding.UTF8.GetString(data, space + 1, position + length - space - 2);
+                if (record.StartsWith("path=", StringComparison.Ordinal))
+                    return record.Substring(5);
+                position += length;
+            }
+            return null;
+        }
+
         static void WriteFile(Stream stream, string path, byte[] data)
         {
             if (!TrySplitUstarName(path, out var name, out var prefix))

@@ -105,10 +105,49 @@ namespace Aeternum.Packages
         }
 
         /// <summary>Downloads the zip archive of a commit to <paramref name="destination"/>.</summary>
-        public async Task DownloadZipballAsync(string repo, string commitSha, string destination)
+        public Task DownloadZipballAsync(string repo, string commitSha, string destination)
         {
             var what = $"the archive of {repo} at {commitSha.Substring(0, Math.Min(7, commitSha.Length))}";
-            using (var response = await SendAsync($"/repos/{repo}/zipball/{commitSha}", what, "application/vnd.github+json"))
+            return DownloadAsync($"/repos/{repo}/zipball/{commitSha}", what, "application/vnd.github+json", destination);
+        }
+
+        /// <summary>
+        /// The API URL of the asset named <paramref name="assetName"/> in the published release of
+        /// <paramref name="tagName"/>, or null when the tag has no release or the release has no such asset.
+        /// </summary>
+        public async Task<string> FindReleaseAssetAsync(string repo, string tagName, string assetName)
+        {
+            var what = $"the release {tagName} of {repo}";
+            using (var response = await SendAsync($"/repos/{repo}/releases/tags/{EscapePath(tagName)}", what, "application/vnd.github+json"))
+            {
+                // The repository was readable a moment ago, when its tags were listed: a 404 here is a tag without a release.
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                    return null;
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw Failure(response.StatusCode, what);
+
+                var release = Json.ParseObject(await response.Content.ReadAsStringAsync());
+                foreach (var item in release.GetArray("assets") ?? new List<object>())
+                {
+                    if (!(item is Dictionary<string, object> asset) || asset.GetString("name") != assetName)
+                        continue;
+                    // The token is only sent to api.github.com: an asset must be fetched through its API URL.
+                    var url = asset.GetString("url");
+                    if (url == null || !url.StartsWith(ApiRoot + "/", StringComparison.Ordinal))
+                        throw new AgsPackagesException($"The asset {assetName} of {what} has no API URL.");
+                    return url;
+                }
+                return null;
+            }
+        }
+
+        /// <summary>Downloads a release asset found by <see cref="FindReleaseAssetAsync"/> to <paramref name="destination"/>.</summary>
+        public Task DownloadReleaseAssetAsync(string assetUrl, string what, string destination) =>
+            DownloadAsync(assetUrl, what, "application/octet-stream", destination);
+
+        async Task DownloadAsync(string url, string what, string accept, string destination)
+        {
+            using (var response = await SendAsync(url, what, accept))
             {
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
@@ -173,6 +212,9 @@ namespace Aeternum.Packages
 
         async Task<HttpResponseMessage> SendAsync(string url, string what, string accept)
         {
+            // The Authorization header goes only to api.github.com.
+            if (url.StartsWith("https://", StringComparison.Ordinal) && !url.StartsWith(ApiRoot + "/", StringComparison.Ordinal))
+                throw new AgsPackagesException($"Refusing to send the GitHub credential outside api.github.com for {what}.");
             var request = new HttpRequestMessage(HttpMethod.Get, url.StartsWith("https://", StringComparison.Ordinal) ? url : ApiRoot + url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Secret);
             request.Headers.Accept.ParseAdd(accept);

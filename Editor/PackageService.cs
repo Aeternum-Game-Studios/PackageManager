@@ -111,7 +111,8 @@ namespace Aeternum.Packages
 
         /// <summary>
         /// Installs or updates <paramref name="name"/> to <paramref name="version"/>: the tagged
-        /// folder becomes UPM/name-version.tgz, the manifest depends on it, and the previous
+        /// folder becomes UPM/name-version.tgz (or the release's own name-version.tgz, if it has
+        /// one and it holds the tagged files), the manifest depends on it, and the previous
         /// tarball is deleted once the Package Manager has resolved the new one. If the Package
         /// Manager fails, the manifest stays as it was and the new tarball is deleted.
         /// </summary>
@@ -139,12 +140,32 @@ namespace Aeternum.Packages
                 var fileName = ProjectPackages.TarballFileName(name, wanted);
                 var built = Path.Combine(work, fileName);
                 var source = $"{entry.Repo} at {tag.Name}";
+                Dictionary<string, byte[]> files = null;
                 await Task.Run(() =>
                 {
-                    var files = PackageArchive.ReadFolder(zip, entry.Path);
+                    files = PackageArchive.ReadFolder(zip, entry.Path);
                     PackageArchive.Validate(files, name, wanted, source);
-                    TarGz.Write(built, files);
                 });
+
+                // A tarball published with the release under the same name (signed by Unity, say) is installed as
+                // it is, once it's checked to hold the tagged files; without one, the tarball is built from them.
+                var assetUrl = await connection.Client.FindReleaseAssetAsync(entry.Repo, tag.Name, fileName);
+                if (assetUrl == null)
+                {
+                    await Task.Run(() => TarGz.Write(built, files));
+                }
+                else
+                {
+                    var published = $"{fileName} of the release {tag.Name} of {entry.Repo}";
+                    Log($"Using {published}.");
+                    await connection.Client.DownloadReleaseAssetAsync(assetUrl, published, built);
+                    await Task.Run(() =>
+                    {
+                        var packed = TarGz.Read(built);
+                        PackageArchive.Validate(packed, name, wanted, published);
+                        PackageArchive.CheckSameFiles(packed, files, published, source);
+                    });
+                }
 
                 var target = Path.Combine(ProjectPackages.TarballFolder, fileName);
                 var dependency = ProjectPackages.Dependency(fileName);
