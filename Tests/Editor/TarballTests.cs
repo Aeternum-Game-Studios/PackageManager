@@ -94,6 +94,32 @@ namespace Aeternum.Packages.Tests
         }
 
         [Test]
+        public void ThePackageJsonIsComparedAsJson()
+        {
+            var tagged = new Dictionary<string, byte[]>(SampleFiles())
+            {
+                ["package.json"] = Encoding.UTF8.GetBytes("{\r\n  \"name\": \"com.example.tools\",\r\n  \"version\": \"1.0.0\"\r\n}\r\n"),
+            };
+
+            // Unity's packer writes package.json again: CRLF becomes LF
+            var repacked = new Dictionary<string, byte[]>(tagged)
+            {
+                ["package.json"] = Encoding.UTF8.GetBytes("{\n  \"version\": \"1.0.0\",\n  \"name\": \"com.example.tools\"\n}\n"),
+            };
+            Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(repacked, tagged, "published", "tag"));
+
+            var changed = new Dictionary<string, byte[]>(tagged)
+            {
+                ["package.json"] = Encoding.UTF8.GetBytes("{\"name\":\"com.example.tools\",\"version\":\"1.0.1\"}"),
+            };
+            Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(changed, tagged, "published", "tag"));
+
+            // Any other file still has to match byte for byte
+            var reformatted = new Dictionary<string, byte[]>(tagged) { ["Editor/Tool.cs"] = Encoding.UTF8.GetBytes("class Tool {}\n") };
+            Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(reformatted, tagged, "published", "tag"));
+        }
+
+        [Test]
         public void ReadsThePackageFolderOutOfAGitHubZipball()
         {
             var zip = Path.Combine(directory, "source.zip");

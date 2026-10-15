@@ -95,7 +95,8 @@ When the release of the version's tag has that asset, installing the version dow
 installs it as it is, after checking that it holds exactly the tagged package folder: the same
 paths with the same bytes. Hidden paths (names starting with a dot: Unity's `.attestation.p7m`,
 `.gitignore`, `.github`) aren't compared, because Unity never imports them and packers differ on
-them. Anything else and the install fails. A version without the asset is built from the tag as before. Reinstalling a version
+them, and the package's `package.json` is compared as JSON, because Unity's packer writes it again
+(a CRLF one comes out LF). Anything else and the install fails. A version without the asset is built from the tag as before. Reinstalling a version
 whose release gained a signed tarball replaces the unsigned one.
 
 Every manifest dependency on a `.tgz` in `UPM/` is treated as managed by AGS Packages.

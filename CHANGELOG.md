@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] - 2026-10-15
+
+### Fixed
+
+- A signed tarball whose package.json Unity's packer wrote again (a CRLF package.json comes out
+  LF) is no longer refused: the package's package.json is compared as JSON, every other file still
+  byte for byte.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added

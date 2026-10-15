@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace Aeternum.Packages
@@ -37,6 +38,17 @@ namespace Aeternum.Packages
 
         public static List<object> GetArray(this Dictionary<string, object> obj, string key) =>
             obj != null && obj.TryGetValue(key, out var value) ? value as List<object> : null;
+
+        /// <summary>Whether two parsed JSON values hold the same data, whatever their formatting or key order.</summary>
+        public static bool SameValue(object a, object b)
+        {
+            if (a is Dictionary<string, object> objectA && b is Dictionary<string, object> objectB)
+                return objectA.Count == objectB.Count &&
+                       objectA.All(pair => objectB.TryGetValue(pair.Key, out var other) && SameValue(pair.Value, other));
+            if (a is List<object> listA && b is List<object> listB)
+                return listA.Count == listB.Count && !listA.Where((item, i) => !SameValue(item, listB[i])).Any();
+            return Equals(a, b);
+        }
 
         sealed class Parser
         {
