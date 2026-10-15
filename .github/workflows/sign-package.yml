@@ -1,0 +1,110 @@
+# Signs a UPM package with the Unity organization's service account and attaches the signed .tgz to the
+# release of its version tag, where AGS Packages (1.1.0 and later) installs it from.
+#
+# Package repositories call it from a workflow of their own (see "Signed tarballs" in the README). It needs these
+# secrets, set once for the organization: UPM_SERVICE_ACCOUNT_KEY_ID and UPM_SERVICE_ACCOUNT_KEY_SECRET (a Unity
+# Cloud service account with the Package Manager Package Signer role) and UNITY_ORGANIZATION_ID.
+name: Sign package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The version tag to sign (tag prefix + version, as in the catalog).
+        type: string
+        required: true
+      package-path:
+        description: The package's folder in the repository (the one with package.json); empty for the root.
+        type: string
+        default: ''
+      tag-prefix:
+        description: What comes before the version in the tag name, as in the catalog.
+        type: string
+        default: 'v'
+    secrets:
+      UPM_SERVICE_ACCOUNT_KEY_ID:
+        required: true
+      UPM_SERVICE_ACCOUNT_KEY_SECRET:
+        required: true
+      UNITY_ORGANIZATION_ID:
+        required: true
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      # git archive gives exactly the tagged files with the repository's line endings, as GitHub's source archive
+      # does: the files AGS Packages compares the signed tarball against.
+      - name: Export the tagged package
+        env:
+          TAG: ${{ inputs.tag }}
+          PACKAGE_PATH: ${{ inputs.package-path }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/source"
+          git archive --format=tar HEAD | tar -x -C "$RUNNER_TEMP/source"
+          dir="$RUNNER_TEMP/source/${PACKAGE_PATH#/}"
+          dir="${dir%/}"
+          if [ ! -f "$dir/package.json" ]; then
+            echo "::error::No package.json in '$PACKAGE_PATH' at $TAG."
+            exit 1
+          fi
+          name=$(jq -r .name "$dir/package.json")
+          version=$(jq -r .version "$dir/package.json")
+          if [ "$TAG" != "$TAG_PREFIX$version" ]; then
+            echo "::error::package.json says version $version, but the tag is $TAG."
+            exit 1
+          fi
+          {
+            echo "PACKAGE_DIR=$dir"
+            echo "PACKAGE_VERSION=$version"
+            echo "ASSET_NAME=$name-$version.tgz"
+          } >> "$GITHUB_ENV"
+
+      - name: Install UPM CLI
+        run: |
+          curl -fsSL https://cdn.packages.unity.com/upm-cli/install.sh | bash
+          # The installer puts upm on the PATH through the shell profile, which this shell doesn't read.
+          upm_bin=$(find "$HOME" -maxdepth 6 \( -type f -o -type l \) -name upm 2>/dev/null | head -n 1)
+          if [ -z "$upm_bin" ]; then
+            echo "::error::upm wasn't found after installing it."
+            exit 1
+          fi
+          dirname "$upm_bin" >> "$GITHUB_PATH"
+
+      - name: Pack and sign
+        env:
+          UPM_SERVICE_ACCOUNT_KEY_ID: ${{ secrets.UPM_SERVICE_ACCOUNT_KEY_ID }}
+          UPM_SERVICE_ACCOUNT_KEY_SECRET: ${{ secrets.UPM_SERVICE_ACCOUNT_KEY_SECRET }}
+          UNITY_ORGANIZATION_ID: ${{ secrets.UNITY_ORGANIZATION_ID }}
+        run: |
+          upm --version
+          upm pack "$PACKAGE_DIR" --organization-id "$UNITY_ORGANIZATION_ID" --destination "$RUNNER_TEMP/signed"
+          packed=$(find "$RUNNER_TEMP/signed" -maxdepth 1 -type f -name '*.tgz' | head -n 1)
+          if [ -z "$packed" ]; then
+            echo "::error::upm pack didn't produce a .tgz."
+            exit 1
+          fi
+          if ! tar -tzf "$packed" | grep -q '\.attestation\.p7m$'; then
+            echo "::error::The tarball upm pack produced has no signature (.attestation.p7m)."
+            exit 1
+          fi
+          mv "$packed" "$RUNNER_TEMP/$ASSET_NAME"
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$PACKAGE_VERSION" \
+              --notes "Signed package, installed by AGS Packages."
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/$ASSET_NAME" --repo "$GITHUB_REPOSITORY" --clobber

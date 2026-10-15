@@ -64,17 +64,22 @@ namespace Aeternum.Packages.Tests
         }
 
         [Test]
-        public void APublishedTarballMayAddOnlyTheSignature()
+        public void APublishedTarballDiffersOnlyInHiddenPaths()
         {
-            var tagged = new Dictionary<string, byte[]>(SampleFiles()) { [".gitignore"] = Encoding.UTF8.GetBytes("Library/\n") };
+            var tagged = new Dictionary<string, byte[]>(SampleFiles())
+            {
+                [".gitignore"] = Encoding.UTF8.GetBytes("Library/\n"),
+                [".github/workflows/release.yml"] = Encoding.UTF8.GetBytes("on: push\n"),
+            };
             var signed = new Dictionary<string, byte[]>(tagged) { [PackageArchive.SignatureFile] = new byte[] { 1, 2, 3 } };
 
             Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(signed, tagged, "published", "tag"));
             Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(tagged, tagged, "published", "tag"));
 
-            // npm's packing rules, which Unity's packer follows, never include .gitignore
+            // Unity never imports hidden paths, and packers differ on them: they may be left out
             var packed = new Dictionary<string, byte[]>(signed);
             packed.Remove(".gitignore");
+            packed.Remove(".github/workflows/release.yml");
             Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(packed, tagged, "published", "tag"));
 
             var changed = new Dictionary<string, byte[]>(signed) { ["Editor/Tool.cs"] = Encoding.UTF8.GetBytes("class Tool {}\n") };

@@ -76,34 +76,29 @@ namespace Aeternum.Packages
                     "The package's version and its tag have to match.");
         }
 
-        /// <summary>The file Unity adds to a package tarball when it signs it: the only one a published tarball may add.</summary>
+        /// <summary>The file Unity adds to a package tarball when it signs it.</summary>
         public const string SignatureFile = ".attestation.p7m";
-
-        // What npm's packing rules (which Unity's packer follows) never put in a tarball: a published tarball may leave them out.
-        static readonly string[] NeverPacked = { ".gitignore", ".npmignore" };
 
         /// <summary>
         /// Checks that a tarball published with a release holds exactly the tagged package folder: the same paths with
-        /// the same bytes, apart from Unity's signature (<see cref="SignatureFile"/>) and the files a packer never
-        /// includes (.gitignore, .npmignore). Anything else means it isn't the tag's package, so it isn't installed.
+        /// the same bytes. Hidden paths (a file or folder whose name starts with a dot) aren't compared: Unity never
+        /// imports them, so they can't change the package, and packers differ on them (Unity's signature,
+        /// .gitignore, .github). Anything else means it isn't the tag's package, so it isn't installed.
         /// </summary>
         public static void CheckSameFiles(IReadOnlyDictionary<string, byte[]> published, IReadOnlyDictionary<string, byte[]> tagged,
             string publishedSource, string taggedSource)
         {
             var differences = new List<string>();
-            foreach (var file in tagged)
+            foreach (var file in tagged.Where(f => !IsHidden(f.Key)))
             {
                 if (!published.TryGetValue(file.Key, out var bytes))
-                {
-                    if (Array.IndexOf(NeverPacked, file.Key.Substring(file.Key.LastIndexOf('/') + 1)) < 0)
-                        differences.Add($"{file.Key} is missing");
-                }
+                    differences.Add($"{file.Key} is missing");
                 else if (!bytes.SequenceEqual(file.Value))
                     differences.Add($"{file.Key} is different");
             }
-            foreach (var path in published.Keys)
+            foreach (var path in published.Keys.Where(p => !IsHidden(p)))
             {
-                if (path != SignatureFile && !tagged.ContainsKey(path))
+                if (!tagged.ContainsKey(path))
                     differences.Add($"{path} is not in the tag");
             }
             if (differences.Count == 0)
@@ -115,6 +110,8 @@ namespace Aeternum.Packages
                 (differences.Count > 10 ? $" (and {differences.Count - 10} more)." : ".") +
                 " Pack it from a checkout of the tag with the repository's line endings.");
         }
+
+        static bool IsHidden(string path) => path.Split('/').Any(part => part.StartsWith(".", StringComparison.Ordinal));
 
         static string NormalizeFolder(string folder)
         {

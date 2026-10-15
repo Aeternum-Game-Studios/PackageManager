@@ -6,9 +6,11 @@
 
 - Signed tarballs: when the GitHub release of a version's tag has an asset named
   `<name>-<version>.tgz`, it's installed as it is (so a tarball signed by Unity keeps its
-  signature), after checking that it holds exactly the tagged package folder plus Unity's
-  `.attestation.p7m` (a packer may leave out `.gitignore` and `.npmignore`). Versions without one
-  are built from the tag as before.
+  signature), after checking that it holds exactly the tagged package folder (hidden paths, such
+  as the signature or `.gitignore`, aren't compared). Versions without one are built from the
+  tag as before.
+- `.github/workflows/sign-package.yml`: a reusable workflow that signs a package's version tag
+  with the organization's Unity service account and attaches the `.tgz` to its release.
 
 ## [1.0.0] - 2026-10-01
 
