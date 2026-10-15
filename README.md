@@ -53,8 +53,9 @@ doesn't sign: it installs a tarball that was signed once, when the version was r
 
 When the release of the version's tag has that asset, installing the version downloads it and
 installs it as it is, after checking that it holds exactly the tagged package folder: the same
-paths with the same bytes, plus only Unity's signature (`.attestation.p7m`). Anything else and the
-install fails. A version without the asset is built from the tag as before. Reinstalling a version
+paths with the same bytes, plus only Unity's signature (`.attestation.p7m`), and minus only the
+files npm's packing rules never include (`.gitignore`, `.npmignore`). Anything else and the install
+fails. A version without the asset is built from the tag as before. Reinstalling a version
 whose release gained a signed tarball replaces the unsigned one.
 
 Every manifest dependency on a `.tgz` in `UPM/` is treated as managed by AGS Packages.

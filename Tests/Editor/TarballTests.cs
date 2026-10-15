@@ -66,11 +66,16 @@ namespace Aeternum.Packages.Tests
         [Test]
         public void APublishedTarballMayAddOnlyTheSignature()
         {
-            var tagged = SampleFiles();
+            var tagged = new Dictionary<string, byte[]>(SampleFiles()) { [".gitignore"] = Encoding.UTF8.GetBytes("Library/\n") };
             var signed = new Dictionary<string, byte[]>(tagged) { [PackageArchive.SignatureFile] = new byte[] { 1, 2, 3 } };
 
             Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(signed, tagged, "published", "tag"));
             Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(tagged, tagged, "published", "tag"));
+
+            // npm's packing rules, which Unity's packer follows, never include .gitignore
+            var packed = new Dictionary<string, byte[]>(signed);
+            packed.Remove(".gitignore");
+            Assert.DoesNotThrow(() => PackageArchive.CheckSameFiles(packed, tagged, "published", "tag"));
 
             var changed = new Dictionary<string, byte[]>(signed) { ["Editor/Tool.cs"] = Encoding.UTF8.GetBytes("class Tool {}\n") };
             Assert.Throws<AgsPackagesException>(() => PackageArchive.CheckSameFiles(changed, tagged, "published", "tag"));

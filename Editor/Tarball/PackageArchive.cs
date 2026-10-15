@@ -79,10 +79,13 @@ namespace Aeternum.Packages
         /// <summary>The file Unity adds to a package tarball when it signs it: the only one a published tarball may add.</summary>
         public const string SignatureFile = ".attestation.p7m";
 
+        // What npm's packing rules (which Unity's packer follows) never put in a tarball: a published tarball may leave them out.
+        static readonly string[] NeverPacked = { ".gitignore", ".npmignore" };
+
         /// <summary>
         /// Checks that a tarball published with a release holds exactly the tagged package folder: the same paths with
-        /// the same bytes, apart from Unity's signature (<see cref="SignatureFile"/>). Anything else means it isn't the
-        /// tag's package, so it isn't installed.
+        /// the same bytes, apart from Unity's signature (<see cref="SignatureFile"/>) and the files a packer never
+        /// includes (.gitignore, .npmignore). Anything else means it isn't the tag's package, so it isn't installed.
         /// </summary>
         public static void CheckSameFiles(IReadOnlyDictionary<string, byte[]> published, IReadOnlyDictionary<string, byte[]> tagged,
             string publishedSource, string taggedSource)
@@ -91,7 +94,10 @@ namespace Aeternum.Packages
             foreach (var file in tagged)
             {
                 if (!published.TryGetValue(file.Key, out var bytes))
-                    differences.Add($"{file.Key} is missing");
+                {
+                    if (Array.IndexOf(NeverPacked, file.Key.Substring(file.Key.LastIndexOf('/') + 1)) < 0)
+                        differences.Add($"{file.Key} is missing");
+                }
                 else if (!bytes.SequenceEqual(file.Value))
                     differences.Add($"{file.Key} is different");
             }
