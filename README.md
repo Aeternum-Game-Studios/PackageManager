@@ -35,11 +35,12 @@ Unity 6.3 and later warn that a tarball "has been installed without a signature"
 can only come out of Unity, with an account of the organization that signs it, so AGS Packages
 doesn't sign: it installs a tarball that was signed once, when the version was released.
 
-1. Check out the tag with the repository's line endings (Git's `core.autocrlf` would change the
-   files, and the check below would refuse them):
+1. Export the tag with the repository's line endings and without `.git` (Git's `core.autocrlf`
+   would change the files, and the check below would refuse them):
 
    ```
-   git -c core.autocrlf=false clone --depth 1 --branch v1.2.0 https://github.com/owner/tools-repository.git C:\tmp\tools-1.2.0
+   git -C <repository> -c core.autocrlf=false archive -o C:\tmp\tools-1.2.0.zip v1.2.0
+   Expand-Archive C:\tmp\tools-1.2.0.zip C:\tmp\tools-1.2.0
    ```
 
 2. Sign its package folder with Unity (or with the Export button of the Package Manager window):
